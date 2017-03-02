@@ -15,9 +15,20 @@ Pz = lambda z: 0.5*z**2/z0**3*exp(-z/z0)
 #plot(z_arr,Pz(z_arr)); xlabel('z');ylabel('P(z)')
 #savefig('Pz.png');close()
 
-def redshift_gen (N, z0=0, z1=2, Pz=Pz):
+def redshift_gen (N, zlo=0, zhi=2, Pz=Pz):
     '''Generate the N redshifts with with distribution Pz
     '''
-    z_choices = linspace(z0,z1,1001)
+    z_choices = linspace(zlo,zhi,2001)
     prob = Pz(z_choices)
-    np.random.choice(z_choices, size=N, p=prob/sum(prob))
+    sample = np.random.choice(z_choices, size=N, p=prob/sum(prob))
+    return sample
+
+#### test
+#sample=redshift_gen(100)
+#hist(sample);xlabel('z');ylabel('hist');savefig('test_reshiftgen.png');close()
+
+
+
+
+
+
