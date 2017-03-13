@@ -9,6 +9,7 @@ import sys, os
 import hmf
 
 ###### constants ######
+Mpc=3.086e+24#cm
 c = 299792.458#km/s
 Gnewton = 6.674e-8#cgs cm^3/g/s^2
 H0 = 70.0#67.74
@@ -70,7 +71,6 @@ N_lens = int(N_lens_fcn(M_lens, z_lens) + 0.5)
 print M_lens, z_lens, N_lens
 Cvir = lambda logM, z: 10**(0.537+0.488*exp(-0.718*z**1.08)+(-0.097+0.024*z)* (logM-12-log10(2.0/h))  )
 
-#rho_s = M_vir/(4\pi [r_s]^3) [ln(1+c_vir)-c_vir/(1+c_vir)]^{^1}
 
 def Gx_fcn (x, cNFW):#=5.0):
     '''projection function for a halo with cNFW, at location x=theta/theta_s.
@@ -85,34 +85,40 @@ def Gx_fcn (x, cNFW):#=5.0):
         out = 0
     return out
 
-def kappa_proj (logM,  z_fore, z_back, x_back, y_back, x_fore=0, y_fore=0):
+def kappa_proj (logM,  z_lens, z_source, x_source, y_source, x_lens=0, y_lens=0):
     '''return a function, for certain foreground halo, 
-    calculate the projected mass between a foreground halo and a background galaxy pair. x, y(_fore, _back) are in radians.
+    calculate the projected mass between a foreground halo and a background galaxy pair. 
+    x, y are in radians.
     ''' 
-    if z_fore>=z_back or Mvir==0:
+    if z_lens>=z_source or Mvir==0:
         return 0.0
     else:
         Mvir=10**logM
-        Rvir=Rvir_fcn(Mvir,z_fore)
-        DC_fore, DC_back = DC(z_fore), DC(z_back)
+        Rvir=Rvir_fcn(Mvir,z_lens)
+        DC_fore, DC_back = DC(z_lens), DC(z_source)
         cNFW = Cvir(logM, z)
         f=1.0/(log(1.0+cNFW)-cNFW/(1.0+cNFW))# = 1.043 with cNFW=5.0
         two_rhos_rs = Mvir*M_sun*f*cNFW**2/(2*pi*Rvir**2)#cgs, see LK2014 footnote
         
-        Dl_cm = 3.08567758e24*DC_fore/(1.0+z_fore)
+        Dl_cm = 3.08567758e24*DC_fore/(1.0+z_lens)
         ## note: 3.08567758e24cm = 1Mpc###    
-        SIGMAc = 347.29163*DC_back*(1+z_fore)/(DC_fore*(DC_back-DC_fore))
+        SIGMAc = 347.29163*DC_back*(1+z_lens)/(DC_fore*(DC_back-DC_fore))
         ## note: SIGMAc = 1.07163e+27/DlDlsDs
         ## (c*1e5)**2/4.0/pi/Gnewton = 1.0716311756473212e+27
         ## 347.2916311625792 = 1.07163e+27/3.08567758e24
-        theta = sqrt((x_fore-x_back)**2+(y_fore-y_back)**2)
+        theta = sqrt((x_lens-x_source)**2+(y_lens-y_source)**2)
         x = cNFW*theta*Dl_cm/Rvir 
         ## note: x=theta/theta_s, theta_s = theta_vir/c_NFW
         ## theta_vir=Rvir/Dl_cm
         Gx = Gx_fcn(x, cNFW)
-        kappa_p = two_rhos_rs/SIGMAc*Gx
-        
+        kappa_p = two_rhos_rs/SIGMAc*Gx        
         return kappa_p
 
-ngal_like = lambda cNFW: Gx_fcn(ix, cNFW) for ix in linspace(0, cNFW, 51)
+Rvir=Rvir_fcn(Mvir,z_lens)
+ngal_like_fcn = lambda cNFW: array([Gx_fcn(ix, cNFW) for ix in linspace(0.01, cNFW, 51)])
+ngal_like = ngal_like_fcn(cNFW)/sum(ngal_like_fcn(cNFW))
+rlenses = Rvir/Mpc/DC(z_lens) * np.random.choice(linspace(0.01, 1.0, 51), size=N_lens, p=ngal_like)#radians
+ang_lenses = rand(N_lens)*2*pi
+xlens = degrees(rlenses)*60. * sin(ang_lenses) ## in arcmin
+ylens = degrees(rlenses)*60. * cos(ang_lenses) ## in arcmin
 
