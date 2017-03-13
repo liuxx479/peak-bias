@@ -22,7 +22,7 @@ Hcgs = lambda z: H0*sqrt(OmegaM*(1+z)**3+OmegaV)*3.24e-20
 H_inv = lambda z: 1.0/(H0*sqrt(OmegaM*(1+z)**3+OmegaV))
 # luminosity distance Mpc
 DC_integral = lambda z: c*quad(H_inv, 0, z)[0]
-z_arr = linspace(0.1, 1.4, 1000)
+z_arr = linspace(0.0, 2.0, 201)
 DC_arr0 = array([DC_integral(z) for z in z_arr])
 DC = interpolate.interp1d(z_arr, DC_arr0)
 DA = lambda z: DC(z)/(1.0+z)
@@ -30,6 +30,9 @@ DL = lambda z: DC(z)*(1.0+z)
 ##rho_cz = lambda z: rho_c0*(OmegaM*(1+z)**3+(1-OmegaM))
 rho_cz = lambda z: 0.375*Hcgs(z)**2/pi/Gnewton#critical density
 
+dd = lambda z: OmegaM*(1+z)**3/(OmegaM*(1+z)**3+OmegaV)
+Delta_vir = lambda z: 18.0*pi**2+82.0*dd(z)-39.0*dd(z)**2
+Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(Delta_vir(z)*rho_cz(z)))**0.3333
 
 
 ###### source galaxies ######
@@ -82,21 +85,17 @@ def Gx_fcn (x, cNFW):#=5.0):
         out = 0
     return out
 
-def kappa_proj (Mvir, Rvir, z_fore, x_fore, y_fore, z_back, x_back, y_back, DC_fore, DC_back):#, cNFW=5.0):
+def kappa_proj (logM,  z_fore, z_back, x_back, y_back, x_fore=0, y_fore=0):
     '''return a function, for certain foreground halo, 
     calculate the projected mass between a foreground halo and a background galaxy pair. x, y(_fore, _back) are in radians.
-    '''
-    ######## updated next 2 lines to have a variable cNFW
-    ### c0, beta = 11, 0.13 # lin & kilbinger2014 version
-    ### cNFW = c0/(1+z_fore)*(Mvir/1e13)**(-beta)
-    ### note 4/9/16, it was z_back before
-    #cNFW=5.0
-    
+    ''' 
     if z_fore>=z_back or Mvir==0:
         return 0.0
     else:
-        #cNFW = cNFW_fcn(z_fore, Mvir)
-        cNFW = 1.5*cNFW_fcn(z_fore, Mvir)#####!!!test concentration
+        Mvir=10**logM
+        Rvir=Rvir_fcn(Mvir,z_fore)
+        DC_fore, DC_back = DC(z_fore), DC(z_back)
+        cNFW = Cvir(logM, z)
         f=1.0/(log(1.0+cNFW)-cNFW/(1.0+cNFW))# = 1.043 with cNFW=5.0
         two_rhos_rs = Mvir*M_sun*f*cNFW**2/(2*pi*Rvir**2)#cgs, see LK2014 footnote
         
@@ -112,4 +111,8 @@ def kappa_proj (Mvir, Rvir, z_fore, x_fore, y_fore, z_back, x_back, y_back, DC_f
         ## theta_vir=Rvir/Dl_cm
         Gx = Gx_fcn(x, cNFW)
         kappa_p = two_rhos_rs/SIGMAc*Gx
+        
         return kappa_p
+
+ngal_like = lambda cNFW: Gx_fcn(ix, cNFW) for ix in linspace(0, cNFW, 51)
+
