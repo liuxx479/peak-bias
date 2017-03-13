@@ -69,4 +69,47 @@ Cvir = lambda logM, z: 10**(0.537+0.488*exp(-0.718*z**1.08)+(-0.097+0.024*z)* (l
 
 #rho_s = M_vir/(4\pi [r_s]^3) [ln(1+c_vir)-c_vir/(1+c_vir)]^{^1}
 
+def Gx_fcn (x, cNFW):#=5.0):
+    '''projection function for a halo with cNFW, at location x=theta/theta_s.
+    '''
+    if x < 1:
+        out = 1.0/(x**2-1.0)*sqrt(cNFW**2-x**2)/(cNFW+1.0)+1.0/(1.0-x**2)**1.5*arccosh((x**2+cNFW)/x/(cNFW+1.0))
+    elif x == 1:
+        out = sqrt(cNFW**2-1.0)/(cNFW+1.0)**2*(cNFW+2.0)/3.0
+    elif 1 < x <= cNFW:
+        out = 1.0/(x**2-1.0)*sqrt(cNFW**2-x**2)/(cNFW+1.0)-1.0/(x**2-1.0)**1.5*arccos((x**2+cNFW)/x/(cNFW+1.0))
+    elif x > cNFW:
+        out = 0
+    return out
 
+def kappa_proj (Mvir, Rvir, z_fore, x_fore, y_fore, z_back, x_back, y_back, DC_fore, DC_back):#, cNFW=5.0):
+    '''return a function, for certain foreground halo, 
+    calculate the projected mass between a foreground halo and a background galaxy pair. x, y(_fore, _back) are in radians.
+    '''
+    ######## updated next 2 lines to have a variable cNFW
+    ### c0, beta = 11, 0.13 # lin & kilbinger2014 version
+    ### cNFW = c0/(1+z_fore)*(Mvir/1e13)**(-beta)
+    ### note 4/9/16, it was z_back before
+    #cNFW=5.0
+    
+    if z_fore>=z_back or Mvir==0:
+        return 0.0
+    else:
+        #cNFW = cNFW_fcn(z_fore, Mvir)
+        cNFW = 1.5*cNFW_fcn(z_fore, Mvir)#####!!!test concentration
+        f=1.0/(log(1.0+cNFW)-cNFW/(1.0+cNFW))# = 1.043 with cNFW=5.0
+        two_rhos_rs = Mvir*M_sun*f*cNFW**2/(2*pi*Rvir**2)#cgs, see LK2014 footnote
+        
+        Dl_cm = 3.08567758e24*DC_fore/(1.0+z_fore)
+        ## note: 3.08567758e24cm = 1Mpc###    
+        SIGMAc = 347.29163*DC_back*(1+z_fore)/(DC_fore*(DC_back-DC_fore))
+        ## note: SIGMAc = 1.07163e+27/DlDlsDs
+        ## (c*1e5)**2/4.0/pi/Gnewton = 1.0716311756473212e+27
+        ## 347.2916311625792 = 1.07163e+27/3.08567758e24
+        theta = sqrt((x_fore-x_back)**2+(y_fore-y_back)**2)
+        x = cNFW*theta*Dl_cm/Rvir 
+        ## note: x=theta/theta_s, theta_s = theta_vir/c_NFW
+        ## theta_vir=Rvir/Dl_cm
+        Gx = Gx_fcn(x, cNFW)
+        kappa_p = two_rhos_rs/SIGMAc*Gx
+        return kappa_p
