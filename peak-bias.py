@@ -110,28 +110,25 @@ def kappa_proj (logM,  z_lens, z_source_arr, x_source_arr, y_source_arr, x_lens=
     ## note: x=theta/theta_s, theta_s = theta_vir/c_NFW
     ## theta_vir=Rvir/Dl_cm
     Gx_arr = array([Gx_fcn(ix, cNFW) for ix in x])
-    kappa_p = two_rhos_rs/SIGMAc*Gx  
+    kappa_p = two_rhos_rs/SIGMAc*Gx_arr  
     kappa_p[z_source_arr<z_lens]=0
     source_contribution = exp(-0.5*theta**2/radians(1.0/60.0)**2)
     kappa = sum(kappa_p * source_contribution)/sum(source_contribution)
     return kappa
 
-Rvir = Rvir_fcn(Mvir,z_lens)
-ngal_like_fcn = lambda cNFW: array([Gx_fcn(ix, cNFW) for ix in linspace(0.01, cNFW, 51)])
-ngal_like = ngal_like_fcn(cNFW)/sum(ngal_like_fcn(cNFW))
-rlenses = Rvir/Mpc/DC(z_lens) * np.random.choice(linspace(0.01, 1.0, 51), size=N_lens, p=ngal_like)#radians
-ang_lenses = rand(N_lens)*2*pi
-xlens = degrees(rlenses)*60.0 * sin(ang_lenses) ## in arcmin
-ylens = degrees(rlenses)*60.0 * cos(ang_lenses) ## in arcmin
 
-###### one test run #######
-if test_run:
-#### test on a 10x10 arcmin^2 area
-area = 100.0 ## arcmin^2
-N_gal = Ngal_gen(ngal_mean * area)
-z_source_arr = redshift_gen(N_gal)
-x_source_arr = rand(N_gal) * 10.0
-y_source_arr = rand(N_gal) * 10.0
-    
-    
-    
+##### sample 1000 points per halo mass
+##### randomly position in redshift
+##### 
+def sample(Mvir, zlens, seed=08544):
+    N_lens = int(N_lens_fcn(Mvir, zlens) + 0.5)
+    Rvir = Rvir_fcn(Mvir, z_lens)
+    ##### member galaxies
+    ##### N(r) likelihood
+    ngal_like_fcn = lambda cNFW: array([Gx_fcn(ix, cNFW) for ix in linspace(0.01, cNFW, 51)])
+    ngal_like = ngal_like_fcn(cNFW)/sum(ngal_like_fcn(cNFW))    
+    rlenses = Rvir/Mpc/DC(z_lens) * np.random.choice(linspace(0.01, 1.0, 1001), size=N_lens, p=ngal_like)# sieze of radius in radians
+    ang_lenses = rand(N_lens)*2*pi
+    xlens = degrees(rlenses)*60.0 * sin(ang_lenses) ## in arcmin
+    ylens = degrees(rlenses)*60.0 * cos(ang_lenses) ## in arcmin
+
