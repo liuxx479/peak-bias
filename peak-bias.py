@@ -124,8 +124,8 @@ def kappa_proj (logM,  z_lens, z_source_arr, x_source_arr, y_source_arr, x_lens=
 from scipy.spatial import cKDTree  
 
 beta = 0.6
-sslope = 0.32 + beta
-rblend = 0.6/60.0 #0.6 arcsec 
+sslope = 0.5 + beta
+rblend = 1.5/60.0 # arcsec 
 kappa_noise_gen = lambda N: normal(0.0, 0.35, size=N)
 
 def sampling (log10M, z_lens, side=10.0, iseed=10027):
@@ -201,15 +201,15 @@ def sampling (log10M, z_lens, side=10.0, iseed=10027):
     return kappa_sim, kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff
 
 Nsample=1000
-kappa_arr = zeros(shape=(7, 5, Nsample, 7))
+kappa_arr = zeros(shape=(7, 8, Nsample, 7))
 iii=-1
 for ilogM in arange(12,15.5, 0.5):
     iii+=1
     jjj=-1
-    for iz in arange(0.2, 2.2, 0.4):
+    for iz in arange(0.2, 1.8, 0.2):
         jjj+=1
         print ilogM, iz
         kappa_arr[iii,jjj]=array([sampling (ilogM, iz, iseed=x) for x in range(Nsample)])
-save('kappa_arr035.npy',kappa_arr)
+save('kappa_arr035_theta15.npy',kappa_arr)
 #kappa_arr = load('kappa_arr.npy')
 #ksim, knoise, noise, kmem, kmag, kblend, k3eff = [kappa_arr[:,:,:,i] for i in range(7)]
