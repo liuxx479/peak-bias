@@ -7,7 +7,7 @@ from scipy.integrate import quad
 import scipy.optimize as op
 import sys, os
 import hmf ## from https://github.com/steven-murray/hmf
-from peak_bias_func import *
+from scipy.spatial import cKDTree  
 
 #############################
 ###### input parameters #####
@@ -21,6 +21,11 @@ zlo, zhi= 0, 2.0 ## the redshift cuts
 ### magnitude cut ###
 ibandOBS = 6
 aMlimOBS = 24.5
+
+beta = 0.6 ## size bias
+sslope = 0.5 + beta ## magnification bias
+rblend = 1.5/60.0 # arcsec
+sigma_kappa = 0.35
 
 ###############################
 ###### constants ##############
@@ -38,6 +43,9 @@ M_sun = 1.989e33#gram
 ###############################
 ####### small functions #######
 ###############################
+
+########## generate galaxy noise
+kappa_noise_gen = lambda N: normal(0.0, sigma_kappa, size=N)
 
 Hcgs = lambda z: H0*sqrt(OmegaM*(1+z)**3+OmegaV)*3.24e-20
 H_inv = lambda z: 1.0/(H0*sqrt(OmegaM*(1+z)**3+OmegaV))
@@ -92,10 +100,10 @@ def Gx_fcn (x, cNFW):
     return out
 
 ##### projected kappa due to lens with logM, at source location
-def kappa_proj (logM,  z_lens, z_source_arr, x_source_arr, y_source_arr, x_lens=0, y_lens=0, thetaG=1.0):
+def kappa_proj (logM,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=0, y_lens=0, thetaG=1.0):
     '''calculate the projected mass of the forground halo.
     input: 
-    logM, z_lens - lens mass and redshift
+    logM, zlens - lens mass and redshift
     z_source_arr, x_source_arr, y_source_arr - [z, x, y] of the source galaxies, in an array. x, y are in arcmin.
     thetaG - smoothing scale in arcmin, default is 1 arcmin.
     output:
@@ -103,14 +111,14 @@ def kappa_proj (logM,  z_lens, z_source_arr, x_source_arr, y_source_arr, x_lens=
     source_contribution - the contribution from each kappa_i to the total kappa, weighted by the smoothing kernel of size thetaG.
     ''' 
     Mvir = 10**logM
-    Rvir = Rvir_fcn(Mvir,z_lens)
-    DC_lens, DC_source = DC(z_lens), DC(z_source_arr)
+    Rvir = Rvir_fcn(Mvir,zlens)
+    DC_lens, DC_source = DC(zlens), DC(z_source_arr)
     cNFW = Cvir(logM, z)
     f = 1.0/(log(1.0+cNFW)-cNFW/(1.0+cNFW))# = 1.043 with cNFW=5.0
     two_rhos_rs = Mvir*M_sun*f*cNFW**2/(2*pi*Rvir**2)#cgs, see LK2014 footnote
-    Dl_cm = 3.08567758e24*DC_lens/(1.0+z_lens)
+    Dl_cm = 3.08567758e24*DC_lens/(1.0+zlens)
     ## note: 3.08567758e24cm = 1Mpc###    
-    SIGMAc = 347.29163*DC_source*(1+z_lens)/(DC_lens*(DC_source-DC_lens))
+    SIGMAc = 347.29163*DC_source*(1+zlens)/(DC_lens*(DC_source-DC_lens))
     ## note: SIGMAc = 1.07163e+27/DlDlsDs
     ## (c*1e5)**2/4.0/pi/Gnewton = 1.0716311756473212e+27
     ## 347.2916311625792 = 1.07163e+27/3.08567758e24
@@ -121,7 +129,7 @@ def kappa_proj (logM,  z_lens, z_source_arr, x_source_arr, y_source_arr, x_lens=
     ## theta_vir=Rvir/Dl_cm
     Gx_arr = array([Gx_fcn(ix, cNFW) for ix in x])
     kappa_p = two_rhos_rs/SIGMAc*Gx_arr  
-    kappa_p[z_source_arr<z_lens]=0
+    kappa_p[z_source_arr<zlens]=0
     source_contribution = exp(-0.5*theta**2/radians(thetaG/60.0)**2)
     kappa = sum(kappa_p * source_contribution)/sum(source_contribution)
     #return kappa, kappa_p
@@ -197,7 +205,7 @@ def LF(aMlimOBS, z, i=Iband, return_Mlim_hmf=0):
 
 ############ number of lens members
 A, B, C = 47.0, 0.85, -0.1
-N_lens_fcn = lambda logM, z: A*(10**(logM-14.0))**B*(1+z)**C - 1.0
+Nlens_fcn = lambda logM, z: A*(10**(logM-14.0))**B*(1+z)**C - 1.0
 
 ###### halo mass function for lens members ######
 Mmin = 13.0 ### complete for M200c>1e13 M_sun
@@ -207,7 +215,7 @@ dlog10m = 0.01
 Mlens_arr = arange(Mmin, Mmax, dlog10m)
 dndm_arr = lambda zlens: hmf.MassFunction(z=zlens, Mmin=Mmin, Mmax=Mmax, dlog10m=dlog10m).dndm
 ### generate N lens masses with distribution following the halo mass function dndm_arr
-Mlens_gen = lambda N: np.random.choice(Mlens_arr, size=N, p=dndm_arr)  
+Mlens_gen = lambda N, zlens: np.random.choice(Mlens_arr, size=N, p=dndm_arr (zlens)/sum(dndm_arr (zlens)))  
 
 ############ find the rest LF, assign size
 ### (1) caculate an array of LF for Mlim_obs
@@ -232,3 +240,100 @@ def gal_size(logM, z):
     Rvir_Mpc = Rvir/Mpc
     theta_gal = degrees(Rvir_Mpc/DA(z)) * 60.0 ## unit: arcmin
     return theta_gal
+
+######################################
+########## MC ########################
+######################################
+
+def sampling (log10M, zlens, side=10.0, iseed=10027):
+    '''For one lens halo with mass log10M, redshift zlens, do the following:
+    (1) generate source galaxies with distribution Pz
+    (2) generate member galaxies with (x, y, Mvir)
+    (3) cut out member galaxies that fall fainter than Mlim
+    (4) assign sizes to the remaining member galaxies
+    (5) magnification bias: change the source number density at z>zlens
+    (6) blending: remove galaxies overlap in size
+    Return 
+    '''
+    seed(iseed)
+    ### (1) generate source galaxies with distribution Pz
+    area = side**2 ## arcmin^2
+    N_gal = Ngal_gen(ngal_mean * area)
+    z_source_arr = redshift_gen(N_gal)
+    x_source_arr = rand(N_gal) * side
+    y_source_arr = rand(N_gal) * side
+    
+    ### (2) generate member galaxies with (x, y, r, Mvir)
+    Mvir = 10**log10M
+    ### number of lens members
+    Nlens = int(Nlens_fcn(log10M, zlens) + 0.5)
+    ### assign a mass
+    Mlenses = Mlens_gen (Nlens, zlens) 
+    ### assign x, y, according to concentration
+    cNFW = Cvir(log10M, z)
+    ngal_like_fcn = lambda cNFW: array([Gx_fcn(ix, cNFW) for ix in linspace(0.01, cNFW, 1001)])
+    ngal_like = ngal_like_fcn(cNFW)/sum(ngal_like_fcn(cNFW))    
+    Rvir = Rvir_fcn(Mvir, z)
+    theta_vir = degrees(Rvir/Mpc/DC(zlens))*60.0
+    rlenses = theta_vir * np.random.choice(linspace(0.01, 1.0, 1001), size=Nlens, p=ngal_like)# sieze of radius in arcmin
+    ang_lenses = rand(Nlens)*2*pi
+    xlens = rlenses * sin(ang_lenses) ## in arcmin
+    ylens = rlenses * cos(ang_lenses) ## in arcmin
+    
+    ### (3) cut out member galaxies that fall fainter than Mlim
+    Nlim = Nlim_fcn (Nlens, zlens)
+    idx_lim = argsort(Mlenses)[::-1][:Nlim]
+    xlens = xlens[idx_lim]
+    ylens = ylens[idx_lim]
+    Mlenses = Mlenses[idx_lim]
+    
+    ### (4) assign sizes to the remaining member galaxies
+    gal_sizes = gal_size(Mlenses, zlens)
+        
+    ##### magnification bias
+
+    r_impact = theta_vir
+    N_source_back = sum( (z_source_arr>zlens) & ( sqrt((x_source_arr-side/2)**2 + (y_source_arr-side/2)**2) < r_impact))
+    kappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)
+    N_source_new = N_source_back * (5.0*sslope-2.0) * kappa_real[0]
+    N_source_new = int(N_source_new+0.5)
+    ## new position and redshift, but limit to higher redshift
+    z_source_new = np.random.choice(z_choices[z_choices>zlens], size=N_source_new, 
+                                    p=prob[z_choices>zlens]/sum (prob[z_choices>zlens]))
+    ang_new = rand(N_source_new)*2*pi
+    x_source_new = r_impact * rand(N_source_new) * sin(ang_new)
+    y_source_new = r_impact * rand(N_source_new) * cos(ang_new)
+    
+    ######  blending
+    xy = concatenate([[xlens+side/2, ylens+side/2],
+                        [x_source_arr, y_source_arr],
+                        [x_source_new+side/2, y_source_new+side/2]],axis=1).T
+    kdt = cKDTree(xy)
+    idx_blend = (~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))
+    x_blend, y_blend = xy[idx_blend].T
+    z_blend = concatenate([ones(Nlens)*zlens, z_source_arr, z_source_new])[~idx_blend]
+    
+    ###### test impacts
+    x_all = concatenate([x_source_arr, xlens+side/2, x_source_new+side/2])
+    y_all = concatenate([y_source_arr, ylens+side/2, y_source_new+side/2])
+    z_all = concatenate([z_source_arr, ones(Nlens)*zlens, z_source_new])
+    kappa_all = kappa_proj (log10M,  zlens, z_all, x_all, y_all, x_lens=side/2.0, y_lens=side/2.0)[1]
+    noise_all = kappa_noise_gen(len(x_all))
+
+    member, mag, blended = ones(shape=(3, len(x_all)))
+    member [len(x_source_arr):len(x_source_arr)+len(xlens)] = 0 #### 1 are the sources
+    if len(x_source_new)>0:
+        mag [-len(x_source_new):] = 0 ### 1 is the ones not magnified
+    blended [idx_blend] = 0 ## 1 is the ones not blended
+
+    r_all = hypot(x_all-side/2.0, y_all-side/2.0)
+    weight = exp(-0.5*r_all**2)
+
+    kappa_sim = average(kappa_all, weights = weight*mag*member)
+    kappa_noisy = average(kappa_all + noise_all, weights = weight*mag*member)
+    noise = average(noise_all, weights = weight*mag*member)
+    kappa_member = average(kappa_all + noise_all, weights = weight*mag)
+    kappa_mag = average(kappa_all + noise_all, weights = weight*member)
+    kappa_blend = average(kappa_all + noise_all, weights = weight*member*mag*blended)
+    kappa_3eff = average(kappa_all + noise_all,weights =  weight*blended)
+    return kappa_sim, kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff
