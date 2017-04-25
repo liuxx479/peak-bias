@@ -18,11 +18,8 @@ z0 = 0.4 ## mean redshift
 ngal_mean = 20 ## number density in unit of arcmin^-2
 zlo, zhi= 0, 2.0 ## the redshift cuts
 
-### halo mass function limits and steps, for lens members
-Mmin, Mmax, dlog10m=12, 15, 0.01
-
 ### magnitude cut ###
-ibandOBS = Iband
+ibandOBS = 6
 aMlimOBS = 24.5
 
 ###############################
@@ -60,9 +57,11 @@ DA = lambda z: DC(z)/(1.0+z) # angular diameter distance
 DL = lambda z: DC(z)*(1.0+z) # luminosity distance
 
 ####### Bryan & Norman 1998 fitting formula to get Rvir = [M/ (4pi/3 rho Delta_vir)]^0.33 
-dd = lambda z: OmegaM*(1+z)**3/(OmegaM*(1+z)**3+OmegaV)
-Delta_vir = lambda z: 18.0*pi**2+82.0*dd(z)-39.0*dd(z)**2
-Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(Delta_vir(z)*rho_cz(z)))**0.3333
+#dd = lambda z: OmegaM*(1+z)**3/(OmegaM*(1+z)**3+OmegaV)
+#Delta_vir = lambda z: 18.0*pi**2+82.0*dd(z)-39.0*dd(z)**2
+#Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(Delta_vir(z)*rho_cz(z)))**0.3333
+####### Mvir is defined as the M200c, 200 times the critical density
+Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(200.0*rho_cz(z)))**0.3333 ## unit: cm
 
 ####### generate source galaxies: N, Pz
 Pz = lambda z: 0.5*z**2/z0**3*exp(-z/z0) ## P(z)
@@ -75,6 +74,11 @@ Ngal_gen = lambda N: np.random.poisson(N)
 redshift_gen = lambda N: np.random.choice(z_choices, size=N, p=prob) 
 
 ###### halo mass function for lens members ######
+Mmin = 13.0 ### complete for M200c>1e13 M_sun
+#M200c is defined by the spherical overdensity mass with respect to 200 times critical density.
+Mmax = 15.5
+dlog10m = 0.01
+
 Mlens_arr = arange(Mmin, Mmax, dlog10m)
 dndm_arr = lambda zlens: hmf.MassFunction(z=zlens, Mmin=Mmin, Mmax=Mmax, dlog10m=dlog10m).dndm
 ### generate N lens masses with distribution following the halo mass function dndm_arr
@@ -153,8 +157,9 @@ alpha_arr = np.array([-1.01, -1.06, -1.1, -1.24, -1.26, -1.33, -1.33, -1.33])
 aLF = np.array([-2.19, -2.05, -1.8, -1.03, -1.08, -1.25, -0.85, -0.81])
 bLF = np.array([-1.76, -1.74, -1.7, -1.27, -1.29, -0.85, -0.66, -0.63])
 
-###### find the rest magnitude at the galaxy, from observed magnitude cut
-aMlim_fcn = lambda aMlimOBS, z: aMlimOBS - 5.0*log10(DL(z)) - 25.0
+###### convert between obs and 
+aMrest_fcn = lambda aMlimOBS, z: aMlimOBS  - 5.0*log10(DL(z)) - 25.0
+aMobs_fcn = lambda aMlimREST, z: aMlimREST + 5.0*log10(DL(z)) + 25.0
 
 ###### redshift evolution of LF
 aMstar_fcn = lambda z, i: aMstar0[i] + aLF[i]*log(1.0+z) # M* for band i, redshift z
@@ -177,10 +182,10 @@ def find_nearest(array,value):
         idx2=idx[0]-1
     return array[idx[0]],array[idx2],idx[0],idx2
 
-def LF(aMlimOBS, z, i=Iband):
+def LF(aMlimOBS, z, i=Iband, return_Mlim_hmf=0):
+    '''For limiting magnitude aMlimOBS, return the luminosity function
     '''
-    '''
-    aM=aMlim_fcn(aMlimOBS,z)
+    aM=aMrest_fcn(aMlimOBS,z)
     Restlambda=alambdaB[i]/(1+z)    
     wL, wR, idxL, idxR = find_nearest(alambdaB, Restlambda)
     if Restlambda < wL and wL == alambdaB[0]:
@@ -188,8 +193,13 @@ def LF(aMlimOBS, z, i=Iband):
     else:
         ratioL = abs(Restlambda-wL)/abs(wL-wR)
         ratioR = abs(Restlambda-wR)/abs(wL-wR)
+    if return_Mlim_hmf:
+        Mlim_hmf_rest = ratioR*aMstar0[idxR] + ratioL*aMstar0[idxL] + 4.0
+        Mlim_hmf_obs = aMobs_fcn(Mlim_hmf_rest, z)
+        return Mlim_hmf_obs
+    else:
         phi=ratioR*LF0(aM, z, idxL)+ratioL*LF0(aM, z, idxR)
-    return phi
+        return phi
 ###############################################
 
 ###########################################
@@ -198,5 +208,29 @@ def LF(aMlimOBS, z, i=Iband):
 
 ############ number of lens members
 A, B, C = 47.0, 0.85, -0.1
-N_lens_fcn = lambda logM, z: A*(10**(logM-14.0)/h)**B*(1+z)**C - 1.0
+N_lens_fcn = lambda logM, z: A*(10**(logM-14.0))**B*(1+z)**C - 1.0
+
+############ find the rest LF
+### (1) caculate an array of LF for Mlim_obs
+### (2) find Mlim_hmf, which is shifting from M*+4 in rest frame to observation frame
+### (3) calculate an array of LM for Mlim_hmf
+### (4) cut out N_lim most massive lenses that can make into the observation
+### (5) assign a size to the selected lenses based on their mass and redshift
+
+def Nlim_fcn (N, z, aMlimOBS=24.5, i=Iband):
+    '''For one halo with N members, at redshift z, find the number of members Nlim that can make into the observed sample, where observation is conduced at aMlimOBS and i band.
+    '''
+    Mlim_hmf = LF(aMlimOBS, z, i=i, return_Mlim_hmf=1)
+    integrand = lambda aM: LF(aM, z, i=i, return_Mlim_hmf=0)
+    integral_Mlim_obs = quad(integrand, Mlim_hmf-9, aMlimOBS)[0]
+    integral_Mlim_hmf = quad(integrand, Mlim_hmf-9, Mlim_hmf)[0]
+    Nlim = int(N * integral_Mlim_obs/integral_Mlim_hmf + 0.5)
+    return amin([Nlim, N]) ## make sure we don't return more than N galaxies
+
+def gal_size(logM, z):
+    '''For one lens member of mass logM, redhisft z, return its size in arcmin.'''    
+    Rvir = Rvir_fcn(10**logM, z) ## unit: cm
+    Rvir_Mpc = Rvir/Mpc
+    theta_gal = degrees(Rvir_Mpc/DA(z)) * 60.0 ## unit: arcmin
+    return theta_gal
 
