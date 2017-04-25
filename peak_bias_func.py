@@ -73,17 +73,6 @@ Ngal_gen = lambda N: np.random.poisson(N)
 ### generate N galaxies with Pz distribution
 redshift_gen = lambda N: np.random.choice(z_choices, size=N, p=prob) 
 
-###### halo mass function for lens members ######
-Mmin = 13.0 ### complete for M200c>1e13 M_sun
-#M200c is defined by the spherical overdensity mass with respect to 200 times critical density.
-Mmax = 15.5
-dlog10m = 0.01
-
-Mlens_arr = arange(Mmin, Mmax, dlog10m)
-dndm_arr = lambda zlens: hmf.MassFunction(z=zlens, Mmin=Mmin, Mmax=Mmax, dlog10m=dlog10m).dndm
-### generate N lens masses with distribution following the halo mass function dndm_arr
-Mlens_gen = lambda N: np.random.choice(Mlens_arr, size=N, p=dndm_arr)  
-
 #######################################
 ######### lensing projection ##########
 #######################################
@@ -210,7 +199,17 @@ def LF(aMlimOBS, z, i=Iband, return_Mlim_hmf=0):
 A, B, C = 47.0, 0.85, -0.1
 N_lens_fcn = lambda logM, z: A*(10**(logM-14.0))**B*(1+z)**C - 1.0
 
-############ find the rest LF
+###### halo mass function for lens members ######
+Mmin = 13.0 ### complete for M200c>1e13 M_sun
+#M200c is defined by the spherical overdensity mass with respect to 200 times critical density.
+Mmax = 15.5
+dlog10m = 0.01
+Mlens_arr = arange(Mmin, Mmax, dlog10m)
+dndm_arr = lambda zlens: hmf.MassFunction(z=zlens, Mmin=Mmin, Mmax=Mmax, dlog10m=dlog10m).dndm
+### generate N lens masses with distribution following the halo mass function dndm_arr
+Mlens_gen = lambda N: np.random.choice(Mlens_arr, size=N, p=dndm_arr)  
+
+############ find the rest LF, assign size
 ### (1) caculate an array of LF for Mlim_obs
 ### (2) find Mlim_hmf, which is shifting from M*+4 in rest frame to observation frame
 ### (3) calculate an array of LM for Mlim_hmf
@@ -233,4 +232,3 @@ def gal_size(logM, z):
     Rvir_Mpc = Rvir/Mpc
     theta_gal = degrees(Rvir_Mpc/DA(z)) * 60.0 ## unit: arcmin
     return theta_gal
-
