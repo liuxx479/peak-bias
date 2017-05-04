@@ -24,9 +24,10 @@ aMlimOBS = 24.5
 
 beta = 0.6 ## size bias
 sslope = 0.5 + beta ## magnification bias
-rblend = 1.5/60.0 # arcsec
+q=5.0*sslope-2.0
+rblend = 5.0/60.0 # arcsec, M13 gals at z=0.5 ~ 2.5 arcsec in size
 sigma_kappa = 0.35
-
+Rgal2halo = 0.015
 ###############################
 ###### constants ##############
 ###############################
@@ -148,12 +149,12 @@ alambdaB = np.array([1500.0, 2800.0, 3546.0, 4344.0, 4670.0, 6156.0, 7472.0, 891
 alambdaOBS = alambdaB [ibandOBS]
 
 ##### Gabasch+2006 Table 9 case 3
+##### Gabasch+2004 Table 4
 aMstar0 = np.array([-17.4, -18.16, -18.95, -20.92, -21.0, -21.49, -21.97, -22.22])
 phistar0 = np.array([2.71e-2, 2.46e-2, 2.19e-2, 0.82e-2, 0.83e-2, 0.42e-2, 0.34e-2, 0.33e-2])
 alpha_arr = np.array([-1.01, -1.06, -1.1, -1.24, -1.26, -1.33, -1.33, -1.33])
 aLF = np.array([-2.19, -2.05, -1.8, -1.03, -1.08, -1.25, -0.85, -0.81])
 bLF = np.array([-1.76, -1.74, -1.7, -1.27, -1.29, -0.85, -0.66, -0.63])
-
 ###### convert between obs and 
 aMrest_fcn = lambda aMlimOBS, z: aMlimOBS  - 5.0*log10(DL(z)) - 25.0
 aMobs_fcn = lambda aMlimREST, z: aMlimREST + 5.0*log10(DL(z)) + 25.0
@@ -234,9 +235,9 @@ def Nlim_fcn (N, z, aMlimOBS=24.5, i=Iband):
     Nlim = int(N * integral_Mlim_obs/integral_Mlim_hmf + 0.5)
     return amin([Nlim, N]) ## make sure we don't return more than N galaxies
 
-def gal_size(logM, z):
+def gal_size_fcn(logM, z):
     '''For one lens member of mass logM, redhisft z, return its size in arcmin.'''    
-    Rvir = Rvir_fcn(10**logM, z) ## unit: cm
+    Rvir = Rgal2halo * Rvir_fcn(10**logM, z) ## unit: cm
     Rvir_Mpc = Rvir/Mpc
     theta_gal = degrees(Rvir_Mpc/DA(z)) * 60.0 ## unit: arcmin
     return theta_gal
@@ -245,7 +246,7 @@ def gal_size(logM, z):
 ########## MC ########################
 ######################################
 
-def sampling (log10M, zlens, side=10.0, iseed=10027):
+def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
     '''For one lens halo with mass log10M, redshift zlens, do the following:
     (1) generate source galaxies with distribution Pz
     (2) generate member galaxies with (x, y, Mvir)
@@ -288,14 +289,13 @@ def sampling (log10M, zlens, side=10.0, iseed=10027):
     Mlenses = Mlenses[idx_lim]
     
     ### (4) assign sizes to the remaining member galaxies
-    gal_sizes = gal_size(Mlenses, zlens)
+    gal_sizes = gal_size_fcn(Mlenses, zlens) #### unit: arcmin
         
-    ##### magnification bias
-
-    r_impact = theta_vir
+    ##### (5) magnification bias: change the source number density at z>zlens
+    r_impact = theta_vir ### impact of magnification bias is only within virial radius
     N_source_back = sum( (z_source_arr>zlens) & ( sqrt((x_source_arr-side/2)**2 + (y_source_arr-side/2)**2) < r_impact))
     kappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)
-    N_source_new = N_source_back * (5.0*sslope-2.0) * kappa_real[0]
+    N_source_new = N_source_back * q * sum(kappa_real[1])
     N_source_new = int(N_source_new+0.5)
     ## new position and redshift, but limit to higher redshift
     z_source_new = np.random.choice(z_choices[z_choices>zlens], size=N_source_new, 
@@ -304,13 +304,21 @@ def sampling (log10M, zlens, side=10.0, iseed=10027):
     x_source_new = r_impact * rand(N_source_new) * sin(ang_new)
     y_source_new = r_impact * rand(N_source_new) * cos(ang_new)
     
-    ######  blending
+    ######  (6) blending: remove galaxies overlap in size
     xy = concatenate([[xlens+side/2, ylens+side/2],
                         [x_source_arr, y_source_arr],
                         [x_source_new+side/2, y_source_new+side/2]],axis=1).T
     kdt = cKDTree(xy)
+    ########## these removes all galaxies within 5 arcsec, typical size of 10^13 halos at z=0.5
     idx_blend = (~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))
-    x_blend, y_blend = xy[idx_blend].T
+    idx_blend_member = []
+    for iii in xrange(xlens):
+        iidx = where(sqrt(sum(xy**2-array([xlens[iii],ylens[iii]])**2)) < galaxy[iii])[0]
+        if len (iidx) > 1:
+            idx_blend_member.append(iidx)
+    idx_blend_tot=### merge idx_blend and idx_blend_member
+    ############## above block to be tested, 5/4/2017
+    x_blend, y_blend = xy[idx_blend_tot].T
     z_blend = concatenate([ones(Nlens)*zlens, z_source_arr, z_source_new])[~idx_blend]
     
     ###### test impacts
