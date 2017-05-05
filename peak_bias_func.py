@@ -27,7 +27,7 @@ sslope = 0.5 + beta ## magnification bias
 q=5.0*sslope-2.0
 rblend = 5.0/60.0 # arcsec, M13 gals at z=0.5 ~ 2.5 arcsec in size
 sigma_kappa = 0.35
-Rgal2halo = 0.015
+Rgal2halo = 0.02
 ###############################
 ###### constants ##############
 ###############################
@@ -237,10 +237,10 @@ def Nlim_fcn (N, z, aMlimOBS=24.5, i=Iband):
 
 def gal_size_fcn(logM, z):
     '''For one lens member of mass logM, redhisft z, return its size in arcmin.'''    
-    Rvir = Rgal2halo * Rvir_fcn(10**logM, z) ## unit: cm
+    Rvir = Rvir_fcn(10**logM, z) ## unit: cm
     Rvir_Mpc = Rvir/Mpc
     theta_gal = degrees(Rvir_Mpc/DA(z)) * 60.0 ## unit: arcmin
-    return theta_gal
+    return Rgal2halo * theta_gal
 
 ######################################
 ########## MC ########################
@@ -278,8 +278,8 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
     theta_vir = degrees(Rvir/Mpc/DC(zlens))*60.0
     rlenses = theta_vir * np.random.choice(linspace(0.01, 1.0, 1001), size=Nlens, p=ngal_like)# sieze of radius in arcmin
     ang_lenses = rand(Nlens)*2*pi
-    xlens = rlenses * sin(ang_lenses) ## in arcmin
-    ylens = rlenses * cos(ang_lenses) ## in arcmin
+    xlens = rlenses * sin(ang_lenses) + 5.0## in arcmin
+    ylens = rlenses * cos(ang_lenses) + 5.0## in arcmin
     
     ### (3) cut out member galaxies that fall fainter than Mlim
     Nlim = Nlim_fcn (Nlens, zlens)
@@ -290,12 +290,14 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
     
     ### (4) assign sizes to the remaining member galaxies
     gal_sizes = gal_size_fcn(Mlenses, zlens) #### unit: arcmin
+    gal_sizes[0]=gal_size_fcn(log10M, zlens)
         
     ##### (5) magnification bias: change the source number density at z>zlens
     r_impact = theta_vir ### impact of magnification bias is only within virial radius
     N_source_back = sum( (z_source_arr>zlens) & ( sqrt((x_source_arr-side/2)**2 + (y_source_arr-side/2)**2) < r_impact))
-    kappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)
-    N_source_new = N_source_back * q * sum(kappa_real[1])
+    contributions, ikappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)
+    kappa_real = sum(contributions*kappa_real)/sum(contributions) ## the actual kappa
+    N_source_new = N_source_back * q * kappa_real
     N_source_new = int(N_source_new+0.5)
     ## new position and redshift, but limit to higher redshift
     z_source_new = np.random.choice(z_choices[z_choices>zlens], size=N_source_new, 
@@ -310,15 +312,18 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
                         [x_source_new+side/2, y_source_new+side/2]],axis=1).T
     kdt = cKDTree(xy)
     ########## these removes all galaxies within 5 arcsec, typical size of 10^13 halos at z=0.5
-    idx_blend = (~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))
+    idx_blend_all = where(~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))[0]
     idx_blend_member = []
-    for iii in xrange(xlens):
-        iidx = where(sqrt(sum(xy**2-array([xlens[iii],ylens[iii]])**2)) < galaxy[iii])[0]
+    for iii in xrange(len(xlens)):
+        if gal_sizes[iii]> rblend:
+            iidx = where(sqrt(sum( (xy-array([xlens[iii],ylens[iii]]))**2,axis=1)) < gal_sizes[iii])[0]
         if len (iidx) > 1:
             idx_blend_member.append(iidx)
-    idx_blend_tot=### merge idx_blend and idx_blend_member
+    idx_blend_member=unique(concatenate(idx_blend_member))
+    if len(idx_blend_member)>0:
+        idx_blend_tot = unique(concatenate([idx_blend_all, idx_blend_member]))
     ############## above block to be tested, 5/4/2017
-    x_blend, y_blend = xy[idx_blend_tot].T
+    x_blend, y_blend = xy[idx_blend_member].T
     z_blend = concatenate([ones(Nlens)*zlens, z_source_arr, z_source_new])[~idx_blend]
     
     ###### test impacts
