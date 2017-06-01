@@ -132,9 +132,10 @@ def kappa_proj (logM,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=0
     kappa_p = two_rhos_rs/SIGMAc*Gx_arr  
     kappa_p[z_source_arr<zlens]=0
     source_contribution = exp(-0.5*theta**2/radians(thetaG/60.0)**2)
+    source_contribution[z_source_arr<zlens]=0
     kappa = sum(kappa_p * source_contribution)/sum(source_contribution)
     #return kappa, kappa_p
-    return source_contribution, kappa_p
+    return source_contribution, kappa_p, kappa
 
 ###################################################
 ######## luminosity function (Gabasch+2006) #######
@@ -271,15 +272,15 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
     ### assign a mass
     Mlenses = Mlens_gen (Nlens, zlens) 
     ### assign x, y, according to concentration
-    cNFW = Cvir(log10M, z)
+    cNFW = Cvir(log10M, zlens)
     ngal_like_fcn = lambda cNFW: array([Gx_fcn(ix, cNFW) for ix in linspace(0.01, cNFW, 1001)])
     ngal_like = ngal_like_fcn(cNFW)/sum(ngal_like_fcn(cNFW))    
-    Rvir = Rvir_fcn(Mvir, z)
+    Rvir = Rvir_fcn(Mvir, zlens)
     theta_vir = degrees(Rvir/Mpc/DC(zlens))*60.0
     rlenses = theta_vir * np.random.choice(linspace(0.01, 1.0, 1001), size=Nlens, p=ngal_like)# sieze of radius in arcmin
     ang_lenses = rand(Nlens)*2*pi
-    xlens = rlenses * sin(ang_lenses) + 5.0## in arcmin
-    ylens = rlenses * cos(ang_lenses) + 5.0## in arcmin
+    xlens = rlenses * sin(ang_lenses) + side/2## in arcmin
+    ylens = rlenses * cos(ang_lenses) + side/2## in arcmin
     
     ### (3) cut out member galaxies that fall fainter than Mlim
     Nlim = Nlim_fcn (Nlens, zlens)
@@ -295,52 +296,73 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
     ##### (5) magnification bias: change the source number density at z>zlens
     r_impact = theta_vir ### impact of magnification bias is only within virial radius
     N_source_back = sum( (z_source_arr>zlens) & ( sqrt((x_source_arr-side/2)**2 + (y_source_arr-side/2)**2) < r_impact))
-    contributions, ikappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)
-    kappa_real = sum(contributions*kappa_real)/sum(contributions) ## the actual kappa
+    contributions, ikappa_real, kappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)## the actual kappa
     N_source_new = N_source_back * q * kappa_real
     N_source_new = int(N_source_new+0.5)
     ## new position and redshift, but limit to higher redshift
     z_source_new = np.random.choice(z_choices[z_choices>zlens], size=N_source_new, 
                                     p=prob[z_choices>zlens]/sum (prob[z_choices>zlens]))
     ang_new = rand(N_source_new)*2*pi
-    x_source_new = r_impact * rand(N_source_new) * sin(ang_new)
-    y_source_new = r_impact * rand(N_source_new) * cos(ang_new)
+    x_source_new = r_impact * rand(N_source_new) * sin(ang_new) + side/2
+    y_source_new = r_impact * rand(N_source_new) * cos(ang_new) + side/2
     
     ######  (6) blending: remove galaxies overlap in size
-    xy = concatenate([[xlens+side/2, ylens+side/2],
+    xy = concatenate([[xlens, ylens],
                         [x_source_arr, y_source_arr],
-                        [x_source_new+side/2, y_source_new+side/2]],axis=1).T
+                        [x_source_new, y_source_new]],axis=1).T
     kdt = cKDTree(xy)
-    ########## these removes all galaxies within 5 arcsec, typical size of 10^13 halos at z=0.5
-    idx_blend_all = where(~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))[0]
+
+    rblend = 0.0001/60 ### effectively not checking blends due to non-members
+
+    ########## these removes all galaxies within rblend
+    idx_blend_tot = where(~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))[0]
+    ########## comment out the below block for blending due to members
     idx_blend_member = []
+    ##print rblend, gal_sizes
     for iii in xrange(len(xlens)):
         if gal_sizes[iii]> rblend:
             iidx = where(sqrt(sum( (xy-array([xlens[iii],ylens[iii]]))**2,axis=1)) < gal_sizes[iii])[0]
-        if len (iidx) > 1:
-            idx_blend_member.append(iidx)
-    idx_blend_member=unique(concatenate(idx_blend_member))
+            if len (iidx) > 1:
+                idx_blend_member.append(iidx)
+
     if len(idx_blend_member)>0:
-        idx_blend_tot = unique(concatenate([idx_blend_all, idx_blend_member]))
-    ############## above block to be tested, 5/4/2017
-    x_blend, y_blend = xy[idx_blend_member].T
-    z_blend = concatenate([ones(Nlens)*zlens, z_source_arr, z_source_new])[~idx_blend]
-    
-    ###### test impacts
-    x_all = concatenate([x_source_arr, xlens+side/2, x_source_new+side/2])
-    y_all = concatenate([y_source_arr, ylens+side/2, y_source_new+side/2])
-    z_all = concatenate([z_source_arr, ones(Nlens)*zlens, z_source_new])
-    kappa_all = kappa_proj (log10M,  zlens, z_all, x_all, y_all, x_lens=side/2.0, y_lens=side/2.0)[1]
+        print 'removing some members',len(idx_blend_member)
+        idx_blend_member=unique(concatenate(idx_blend_member))
+        idx_blend_tot = unique(concatenate([idx_blend_tot, idx_blend_member]))
+
+    ###################################################    
+    x_blend, y_blend = xy[idx_blend_tot].T
+    z_blend = concatenate([ones(Nlim)*zlens, z_source_arr, z_source_new])[idx_blend_tot]
+    z_notblend = delete(concatenate([ones(Nlim)*zlens, z_source_arr, z_source_new]), idx_blend_tot)
+
+    ###############################
+    ###### add shape noise ########
+    ###############################
+    kappa_noise_gen = lambda N: normal(0.0, 0.1, size=N) #draw N kappa_noise for sigma_kappa = 0.1 
+    #shear noise for HSC sigma_g^2=0.365
+
+    ##x_all, y_all, z_all, kappa_all, noise_all, member, source_mb, blended
+
+    x_all = concatenate([x_source_arr, xlens, x_source_new])
+    y_all = concatenate([y_source_arr, ylens, y_source_new])
+    z_all = concatenate([z_source_arr, ones(Nlim)*zlens, z_source_new])
+
     noise_all = kappa_noise_gen(len(x_all))
 
+    ######### indexing the effects ###########
     member, mag, blended = ones(shape=(3, len(x_all)))
     member [len(x_source_arr):len(x_source_arr)+len(xlens)] = 0 #### 1 are the sources
     if len(x_source_new)>0:
         mag [-len(x_source_new):] = 0 ### 1 is the ones not magnified
-    blended [idx_blend] = 0 ## 1 is the ones not blended
+    blended [idx_blend_tot] = 0 ## 1 is the ones not blended
 
+    ######### calculate the kappa with various effects
     r_all = hypot(x_all-side/2.0, y_all-side/2.0)
     weight = exp(-0.5*r_all**2)
+
+    #print len(z_all),len(x_all),len(y_all)
+
+    kappa_all = kappa_proj (log10M,  zlens, z_all, x_all, y_all, x_lens=side/2.0, y_lens=side/2.0)[1]
 
     kappa_sim = average(kappa_all, weights = weight*mag*member)
     kappa_noisy = average(kappa_all + noise_all, weights = weight*mag*member)
