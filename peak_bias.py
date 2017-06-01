@@ -13,21 +13,27 @@ from scipy.spatial import cKDTree
 ###### input parameters #####
 #############################
 
-### redshift
+### redshift ####
 z0 = 0.4 ## mean redshift 
 ngal_mean = 20 ## number density in unit of arcmin^-2
 zlo, zhi= 0, 2.0 ## the redshift cuts
 
 ### magnitude cut ###
+## 0:U1band, 1:U2band, 2:U3band, 3:Bband, 4:Gband, 5:Rband, 6:Iband, 7:Zband
 ibandOBS = 6
 aMlimOBS = 24.5
 
-#beta = 0.6 ## size bias
-#sslope = 0.5 + beta ## magnification bias
-#q=5.0*sslope-2.0
-#rblend = 5.0/60.0 # arcsec, M13 gals at z=0.5 ~ 2.5 arcsec in size
-sigma_kappa = 0.35
-Rgal2halo = 0.02
+### magnification bias parameters ####
+#q=5.0*ss-2.0+beta
+rblend = 1e-6 #unit: aremin, set it to very small to ignore random blending due to non-members
+q=1.5
+
+### galaxy shape noise ########
+sigma_kappa = 0.35 ## HSC = 0.365
+Rgal2halo = 0.02 ## See Kravtsov2013 for galaxy-halo size relation
+
+
+
 ###############################
 ###### constants ##############
 ###############################
@@ -207,7 +213,7 @@ def LF(aMlimOBS, z, i=Iband, return_Mlim_hmf=0):
 
 ############ number of lens members
 A, B, C = 47.0, 0.85, -0.1
-Nlens_fcn = lambda logM, z: A*(10**(logM-14.0))**B*(1+z)**C - 1.0
+Nlens_fcn = lambda logM, z: amax([A*(10**(logM-14.0))**B*(1+z)**C - 1.0, 1])
 
 ###### halo mass function for lens members ######
 Mmin = 13.0 ### complete for M200c>1e13 M_sun
@@ -244,9 +250,8 @@ def gal_size_fcn(logM, z):
     return Rgal2halo * theta_gal
 
 ######################################
-########## MC ########################
+########## sampling ##################
 ######################################
-
 
 def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend = 0.0001/60):
     '''For one lens halo with mass log10M, redshift zlens, do the following:
@@ -283,7 +288,9 @@ def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend =
     ### assign x, y, according to concentration
     cNFW = Cvir(log10M, zlens)
     ngal_like_fcn = lambda cNFW: array([Gx_fcn(ix, cNFW) for ix in linspace(0.01, cNFW, 1001)])
-    ngal_like = ngal_like_fcn(cNFW)/sum(ngal_like_fcn(cNFW))    
+    ingal_like=ngal_like_fcn(cNFW)
+    ingal_like[ingal_like<0]=0.0
+    ngal_like = ingal_like/sum(ingal_like)  
     Rvir = Rvir_fcn(Mvir, zlens)
     theta_vir = degrees(Rvir/Mpc/DC(zlens))*60.0
     rlenses = theta_vir * np.random.choice(linspace(0.01, 1.0, 1001), size=Nlens, p=ngal_like)# sieze of radius in arcmin
@@ -299,8 +306,9 @@ def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend =
     Mlenses = Mlenses[idx_lim]
     
     ### (4) assign sizes to the remaining member galaxies
-    gal_sizes = gal_size_fcn(Mlenses, zlens) #### unit: arcmin
-    gal_sizes[0]=gal_size_fcn(log10M, zlens)
+    if len(Mlenses)>0:
+        gal_sizes = gal_size_fcn(Mlenses, zlens) #### unit: arcmin
+        gal_sizes[0]=gal_size_fcn(log10M, zlens)
         
     ##### (5) magnification bias: change the source number density at z>zlens
     r_impact = theta_vir ### impact of magnification bias is only within virial radius
@@ -326,14 +334,15 @@ def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend =
     ########## comment out the below block for blending due to members
     idx_blend_member = []
     ##print rblend, gal_sizes
-    for iii in xrange(len(xlens)):
-        if gal_sizes[iii]> rblend:
-            iidx = where(sqrt(sum( (xy-array([xlens[iii],ylens[iii]]))**2,axis=1)) < gal_sizes[iii])[0]
-            if len (iidx) > 1:
-                idx_blend_member.append(iidx)
+    if len(Mlenses)>0:
+        for iii in xrange(len(xlens)):
+            if gal_sizes[iii]> rblend:
+                iidx = where(sqrt(sum( (xy-array([xlens[iii],ylens[iii]]))**2,axis=1)) < gal_sizes[iii])[0]
+                if len (iidx) > 1:
+                    idx_blend_member.append(iidx)
 
     if len(idx_blend_member)>0:
-        print 'removing some members',len(idx_blend_member)
+        #print 'removing some members',len(idx_blend_member)
         idx_blend_member=unique(concatenate(idx_blend_member))
         idx_blend_tot = unique(concatenate([idx_blend_tot, idx_blend_member]))
 
@@ -365,7 +374,7 @@ def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend =
 
     ######### calculate the kappa with various effects
     r_all = hypot(x_all-side/2.0, y_all-side/2.0)
-    weight = exp(-0.5*(r_all/tehtaG)**2)
+    weight = exp(-0.5*(r_all/thetaG)**2)
 
     #print len(z_all),len(x_all),len(y_all)
 
@@ -378,4 +387,13 @@ def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend =
     kappa_mag = average(kappa_all + noise_all, weights = weight*member)
     kappa_blend = average(kappa_all + noise_all, weights = weight*member*mag*blended)
     kappa_3eff = average(kappa_all + noise_all,weights =  weight*blended)
-    return kappa_sim, kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff
+    return kappa_real, kappa_sim, kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff
+
+Nsample = 100
+Marr = arange(13, 15.5, 0.5)
+zarr = arange(0.1, 2.1, 0.2)
+for q in arange(0.5, 4, 0.5):
+    for thetaG in arange(1.0,4.0):
+        print 'q thetaG =',q,thetaG
+        out = array([[[sampling (log10M, zlens, iseed=x, q=q, thetaG=thetaG) for x in range(Nsample)] for zlens in zarr] for log10M in Marr])
+        save('sampling/kappa_q%.1f_thetaG%.1f.npy'%(q,thetaG), out)
