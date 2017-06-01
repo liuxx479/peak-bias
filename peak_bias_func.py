@@ -22,10 +22,10 @@ zlo, zhi= 0, 2.0 ## the redshift cuts
 ibandOBS = 6
 aMlimOBS = 24.5
 
-beta = 0.6 ## size bias
-sslope = 0.5 + beta ## magnification bias
-q=5.0*sslope-2.0
-rblend = 5.0/60.0 # arcsec, M13 gals at z=0.5 ~ 2.5 arcsec in size
+#beta = 0.6 ## size bias
+#sslope = 0.5 + beta ## magnification bias
+#q=5.0*sslope-2.0
+#rblend = 5.0/60.0 # arcsec, M13 gals at z=0.5 ~ 2.5 arcsec in size
 sigma_kappa = 0.35
 Rgal2halo = 0.02
 ###############################
@@ -247,7 +247,8 @@ def gal_size_fcn(logM, z):
 ########## MC ########################
 ######################################
 
-def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
+
+def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend = 0.0001/60):
     '''For one lens halo with mass log10M, redshift zlens, do the following:
     (1) generate source galaxies with distribution Pz
     (2) generate member galaxies with (x, y, Mvir)
@@ -255,7 +256,15 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
     (4) assign sizes to the remaining member galaxies
     (5) magnification bias: change the source number density at z>zlens
     (6) blending: remove galaxies overlap in size
-    Return 
+    Input:
+    log10M = lens mass
+    zlens = lens redshift
+    q = 5s+beta
+    side = the length of one side of the map, in arcmin
+    thetaG = smoothing scale in arcmin
+    rblend = below which distances galaxies are considered blended
+    Return:
+    kappa_sim, kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff
     '''
     seed(iseed)
     ### (1) generate source galaxies with distribution Pz
@@ -312,8 +321,6 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
                         [x_source_new, y_source_new]],axis=1).T
     kdt = cKDTree(xy)
 
-    rblend = 0.0001/60 ### effectively not checking blends due to non-members
-
     ########## these removes all galaxies within rblend
     idx_blend_tot = where(~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))[0]
     ########## comment out the below block for blending due to members
@@ -358,7 +365,7 @@ def sampling (log10M, zlens, q=q, side=10.0, iseed=10027):
 
     ######### calculate the kappa with various effects
     r_all = hypot(x_all-side/2.0, y_all-side/2.0)
-    weight = exp(-0.5*r_all**2)
+    weight = exp(-0.5*(r_all/tehtaG)**2)
 
     #print len(z_all),len(x_all),len(y_all)
 
