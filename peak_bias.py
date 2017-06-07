@@ -253,7 +253,7 @@ def gal_size_fcn(logM, z):
 ########## sampling ##################
 ######################################
 
-def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend = 0.0001/60):
+def sampling (log10M, zlens, q_arr=[-3,-2,-1,1,2,3], side=10.0, iseed=10027, thetaG_arr=[1.0,2.0,5.0], rblend = 0.0001/60):
     '''For one lens halo with mass log10M, redshift zlens, do the following:
     (1) generate source galaxies with distribution Pz
     (2) generate member galaxies with (x, y, Mvir)
@@ -312,100 +312,134 @@ def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend =
         
     ##### (5) magnification bias: change the source number density at z>zlens
     r_impact = theta_vir ### impact of magnification bias is only within virial radius
-    N_source_back = sum( (z_source_arr>zlens) & ( sqrt((x_source_arr-side/2)**2 + (y_source_arr-side/2)**2) < r_impact))
+    idx_back = where( (z_source_arr>zlens) & ( sqrt((x_source_arr-side/2)**2 + (y_source_arr-side/2)**2) < r_impact))[0]
+    N_source_back = len(idx_back)
     contributions, ikappa_real, kappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)## the actual kappa
-    N_source_new = N_source_back * q * kappa_real
-    N_source_new = int(N_source_new+0.5)
-    ## new position and redshift, but limit to higher redshift
-    z_source_new = np.random.choice(z_choices[z_choices>zlens], size=N_source_new, 
-                                    p=prob[z_choices>zlens]/sum (prob[z_choices>zlens]))
-    ang_new = rand(N_source_new)*2*pi
-    x_source_new = r_impact * rand(N_source_new) * sin(ang_new) + side/2
-    y_source_new = r_impact * rand(N_source_new) * cos(ang_new) + side/2
     
-    ######  (6) blending: remove galaxies overlap in size
-    xy = concatenate([[xlens, ylens],
-                        [x_source_arr, y_source_arr],
-                        [x_source_new, y_source_new]],axis=1).T
-    kdt = cKDTree(xy)
+    
+    out_arr = zeros( (len(q_arr), len(thetaG_arr), 9) )
+    qcounter = 0
+    for q in q_arr:
+        N_source_new = N_source_back * q * kappa_real
+        if q>0:
+            N_source_new = int(N_source_new+0.5)
+            ## new position and redshift, but limit to higher redshift
+            z_source_new = np.random.choice(z_choices[z_choices>zlens], size=N_source_new, 
+                                            p=prob[z_choices>zlens]/sum (prob[z_choices>zlens]))
+            ang_new = rand(N_source_new)*2*pi
+            x_source_new = r_impact * rand(N_source_new) * sin(ang_new) + side/2
+            y_source_new = r_impact * rand(N_source_new) * cos(ang_new) + side/2
+            
+        if q<0:
+            N_source_remove = int(abs(N_source_new)+0.5)
+            idx_delete = choice(idx_back, N_source_remove,replace=False)
+            idx_remain = delete(arange(len(x_source_arr)), idx_delete)
+            x_source_new, y_source_new, z_source_new = [],[],[]
+        xy = concatenate([[x_source_arr, y_source_arr],
+                          [xlens, ylens], [x_source_new, y_source_new]],axis=1).T
+        ######  (6) blending: remove galaxies overlap in size
+        
+        #kdt = cKDTree(xy)
 
-    ########## these removes all galaxies within rblend
-    idx_blend_tot = where(~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))[0]
-    ########## comment out the below block for blending due to members
-    idx_blend_member = []
-    ##print rblend, gal_sizes
-    if len(Mlenses)>0:
-        for iii in xrange(len(xlens)):
-            if gal_sizes[iii]> rblend:
+        ########## these removes all galaxies within rblend
+        #idx_blend_tot = where(~isinf(kdt.query(xy,distance_upper_bound=rblend,k=2)[0][:,1]))[0]
+        ########## comment out the below block for blending due to members
+        idx_blend_member = []
+        ##print rblend, gal_sizes
+        if len(Mlenses)>0:
+            for iii in xrange(len(xlens)):
+                #if gal_sizes[iii]> rblend:
                 iidx = where(sqrt(sum( (xy-array([xlens[iii],ylens[iii]]))**2,axis=1)) < gal_sizes[iii])[0]
                 if len (iidx) > 1:
                     idx_blend_member.append(iidx)
 
-    if len(idx_blend_member)>0:
-        #print 'removing some members',len(idx_blend_member)
-        idx_blend_member=unique(concatenate(idx_blend_member))
-        idx_blend_tot = unique(concatenate([idx_blend_tot, idx_blend_member]))
+        if len(idx_blend_member)>0:
+            #print 'removing some members',len(idx_blend_member)
+            idx_blend_member=unique(concatenate(idx_blend_member))
+            #idx_blend_tot = unique(concatenate([idx_blend_tot, idx_blend_member]))
+        idx_blend_tot=idx_blend_member
+        ###################################################    
+        #x_blend, y_blend = xy[idx_blend_tot].T
+        #z_blend = concatenate([ones(Nlim)*zlens, z_source_arr, z_source_new])[idx_blend_tot]
+        #z_notblend = delete(concatenate([ones(Nlim)*zlens, z_source_arr, z_source_new]), idx_blend_tot)
 
-    ###################################################    
-    x_blend, y_blend = xy[idx_blend_tot].T
-    z_blend = concatenate([ones(Nlim)*zlens, z_source_arr, z_source_new])[idx_blend_tot]
-    z_notblend = delete(concatenate([ones(Nlim)*zlens, z_source_arr, z_source_new]), idx_blend_tot)
+        ###############################
+        ###### add shape noise ########
+        ###############################
+        #draw N kappa_noise for sigma_kappa = 0.1 
+        #shear noise for HSC sigma_g^2=0.365
 
-    ###############################
-    ###### add shape noise ########
-    ###############################
-    kappa_noise_gen = lambda N: normal(0.0, 0.1, size=N) #draw N kappa_noise for sigma_kappa = 0.1 
-    #shear noise for HSC sigma_g^2=0.365
+        ##x_all, y_all, z_all, kappa_all, noise_all, member, source_mb, blended
 
-    ##x_all, y_all, z_all, kappa_all, noise_all, member, source_mb, blended
+        x_all = concatenate([x_source_arr, xlens, x_source_new])
+        y_all = concatenate([y_source_arr, ylens, y_source_new])
+        z_all = concatenate([z_source_arr, ones(Nlim)*zlens, z_source_new])
 
-    x_all = concatenate([x_source_arr, xlens, x_source_new])
-    y_all = concatenate([y_source_arr, ylens, y_source_new])
-    z_all = concatenate([z_source_arr, ones(Nlim)*zlens, z_source_new])
+        
 
-    noise_all = kappa_noise_gen(len(x_all))
+        ######### indexing the effects ###########
+        member, mag, blended = ones(shape=(3, len(x_all)))
+        member [len(x_source_arr):len(x_source_arr)+len(xlens)] = 0 #### 1 are the sources
+        if len(x_source_new)>0:
+            mag [-len(x_source_new):] = 0 ### 1 is the ones not magnified
+        elif q<0 and N_source_remove>0:
+            mag [idx_delete] = 0
+        blended [idx_blend_tot] = 0 ## 1 is the ones not blended
 
-    ######### indexing the effects ###########
-    member, mag, blended = ones(shape=(3, len(x_all)))
-    member [len(x_source_arr):len(x_source_arr)+len(xlens)] = 0 #### 1 are the sources
-    if len(x_source_new)>0:
-        mag [-len(x_source_new):] = 0 ### 1 is the ones not magnified
-    blended [idx_blend_tot] = 0 ## 1 is the ones not blended
-
-    ######### calculate the kappa with various effects
-    r_all = hypot(x_all-side/2.0, y_all-side/2.0)
-    weight = exp(-0.5*(r_all/thetaG)**2)
-
-    #print len(z_all),len(x_all),len(y_all)
-
-    kappa_all = kappa_proj (log10M,  zlens, z_all, x_all, y_all, x_lens=side/2.0, y_lens=side/2.0)[1]
-
-    kappa_sim = average(kappa_all, weights = weight*mag*member)
-    kappa_noisy = average(kappa_all + noise_all, weights = weight*mag*member)
-    noise = average(noise_all, weights = weight*mag*member)
-    kappa_member = average(kappa_all + noise_all, weights = weight*mag)
-    kappa_mag = average(kappa_all + noise_all, weights = weight*member)
-    kappa_blend = average(kappa_all + noise_all, weights = weight*member*mag*blended)
-    kappa_3eff = average(kappa_all + noise_all,weights =  weight*blended)
-    return kappa_real, kappa_sim, kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff
+        ######### calculate the kappa with various effects
+        r_all = hypot(x_all-side/2.0, y_all-side/2.0)
+        seed(iseed+999)
+        noise_all = kappa_noise_gen(len(x_all))
+        
+        thetacounter = 0
+        for thetaG in thetaG_arr:
+            weight = exp(-0.5*(r_all/thetaG)**2)
+            
+            kappa_all = kappa_proj (log10M,  zlens, z_all, x_all, y_all, x_lens=side/2.0, y_lens=side/2.0)[1]
+            if q>0:
+                kappa_sim = average(kappa_all, weights = weight*mag*member)
+                kappa_noisy = average(kappa_all + noise_all, weights = weight*mag*member)
+                noise = average(noise_all, weights = weight*mag*member)
+                kappa_member = average(kappa_all + noise_all, weights = weight*mag)
+                kappa_mag = average(kappa_all + noise_all, weights = weight*member)
+                kappa_blend = average(kappa_all + noise_all, weights = weight*member*mag*blended)
+                kappa_3eff = average(kappa_all + noise_all,weights =  weight*blended)
+                #Nblend=sum(blended*mag*member)
+            elif q<0:
+                kappa_sim = average(kappa_all, weights = weight*member)
+                kappa_noisy = average(kappa_all + noise_all, weights = weight*member)
+                noise = average(noise_all, weights = weight*member)
+                kappa_member = average(kappa_all + noise_all, weights = weight)
+                kappa_mag = average(kappa_all + noise_all, weights = weight*member*mag)
+                kappa_blend = average(kappa_all + noise_all, weights = weight*member*blended)
+                kappa_3eff = average(kappa_all + noise_all,weights =  weight*blended*mag) 
+                #Nblend=sum(blended*member)
+            out_arr[qcounter, thetacounter] = array([kappa_real, kappa_sim, 
+                                kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff])
+            thetacounter+=1
+        qcounter+=1
+            
+    return out_arr
 
 Nsample = 100
 
 Marr = arange(13, 15.5, 0.1)
 zarr = arange(0.1, 2.1, 0.1)
-qarr = arange(0.5, 4, 0.5)
-thetaGarr = [1,2,5]
 
-params_arr = array([[iM, iz, iq, ithetaG] for iM in Marr for iz in zarr for iq in qarr for ithetaG in thetaGarr])
+params_arr = array([[iM, iz] for iM in Marr for iz in zarr])
 
 def sampling_MPI (params):
     print params
-    log10M, zlens, q, thetaG = params
-    out = [sampling (log10M, zlens, q=q, thetaG=thetaG, iseed=i) for i in xrange(100)]   
+    log10M, zlens = params
+    fn='sampling/sampling_MPI_M%.1f_z%.1f.npy'%(log10M, zlens) 
+    out = [sampling (log10M, zlens, iseed=i) for i in xrange(100)]  
+    save(fn,out)
+   # if not os.path.isfile(fn):
+    #else:
+        #out=load(fn)
     return out
 
-#test=sampling_MPI(params_arr[1])
-
+#test=array(sampling_MPI((14.5, 0.3)))
 #import threading
 #threads = []
 #for iparams in params_arr[:10]:
@@ -414,15 +448,16 @@ def sampling_MPI (params):
     #t.start()
 
 ############ MPI ##################
-from emcee.utils import MPIPool 
-pool=MPIPool()
-if not pool.is_master():
-    pool.wait()
-    sys.exit(0)
+MPIsampling = 1
+if MPIsampling:
+    from emcee.utils import MPIPool 
+    pool=MPIPool()
+    if not pool.is_master():
+        pool.wait()
+        sys.exit(0)
 
-out = array(pool.map(sampling_MPI, params_arr[:20]))
-save('sampling_MPI.npy',out)
-
+    pool.map(sampling_MPI, params_arr)
+    pool.close()
 ############## serial ############               
 #for q in arange(0.5, 4, 0.5):
     #for thetaG in arange(1.0,4.0):
