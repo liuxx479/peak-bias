@@ -390,10 +390,40 @@ def sampling (log10M, zlens, q=1.0, side=10.0, iseed=10027, thetaG=1.0, rblend =
     return kappa_real, kappa_sim, kappa_noisy, noise, kappa_member, kappa_mag, kappa_blend, kappa_3eff
 
 Nsample = 100
-Marr = arange(13, 15.5, 0.5)
-zarr = arange(0.1, 2.1, 0.2)
-for q in arange(0.5, 4, 0.5):
-    for thetaG in arange(1.0,4.0):
-        print 'q thetaG =',q,thetaG
-        out = array([[[sampling (log10M, zlens, iseed=x, q=q, thetaG=thetaG) for x in range(Nsample)] for zlens in zarr] for log10M in Marr])
-        save('sampling/kappa_q%.1f_thetaG%.1f.npy'%(q,thetaG), out)
+
+Marr = arange(13, 15.5, 0.1)
+zarr = arange(0.1, 2.1, 0.1)
+qarr = arange(0.5, 4, 0.5)
+thetaGarr = [1,2,5]
+
+params_arr = array([[iM, iz, iq, ithetaG] for iM in Marr for iz in zarr for iq in qarr for ithetaG in thetaGarr])
+
+def sampling_MPI (params):
+    print params
+    log10M, zlens, q, thetaG = params
+    out = [sampling (log10M, zlens, q=q, thetaG=thetaG, iseed=i) for i in xrange(100)]   
+    return out
+
+#test=sampling_MPI(params_arr[1])
+#import threading
+#threads = []
+#for iparams in params_arr[:10]:
+    #t= threading.Thread(target=sampling_MPI, args=(iparams,))
+    #threads.append(t)
+    #t.start()
+############ MPI ##################
+from emcee.utils import MPIPool 
+pool=MPIPool()
+if not pool.is_master():
+    pool.wait()
+    sys.exit(0)
+
+out = array(pool.map(sampling_MPI, params_arr[:280]))
+save('sampling_MPI.npy',out)
+
+############## serial ############               
+#for q in arange(0.5, 4, 0.5):
+    #for thetaG in arange(1.0,4.0):
+        #print 'q thetaG =',q,thetaG
+        #out = array([[[sampling (log10M, zlens, iseed=x, q=q, thetaG=thetaG) for x in range(Nsample)] for zlens in zarr] for log10M in Marr])
+        #save('sampling/kappa_q%.1f_thetaG%.1f.npy'%(q,thetaG), out)
