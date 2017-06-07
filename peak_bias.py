@@ -405,21 +405,23 @@ def sampling_MPI (params):
     return out
 
 #test=sampling_MPI(params_arr[1])
-#import threading
-#threads = []
-#for iparams in params_arr[:10]:
-    #t= threading.Thread(target=sampling_MPI, args=(iparams,))
-    #threads.append(t)
-    #t.start()
-############ MPI ##################
-from emcee.utils import MPIPool 
-pool=MPIPool()
-if not pool.is_master():
-    pool.wait()
-    sys.exit(0)
 
-out = array(pool.map(sampling_MPI, params_arr[:280]))
-save('sampling_MPI.npy',out)
+import threading
+threads = []
+for iparams in params_arr[:10]:
+    t= threading.Thread(target=sampling_MPI, args=(iparams,))
+    threads.append(t)
+    t.start()
+
+############ MPI ##################
+#from emcee.utils import MPIPool 
+#pool=MPIPool()
+#if not pool.is_master():
+    #pool.wait()
+    #sys.exit(0)
+
+#out = array(pool.map(sampling_MPI, params_arr[:20]))
+#save('sampling_MPI.npy',out)
 
 ############## serial ############               
 #for q in arange(0.5, 4, 0.5):
