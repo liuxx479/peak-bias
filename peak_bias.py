@@ -14,25 +14,31 @@ from scipy.spatial import cKDTree
 #############################
 
 ### redshift ####
-z0 = 0.4 ## mean redshift 
-ngal_mean = 20 ## number density in unit of arcmin^-2
-zlo, zhi= 0, 2.0 ## the redshift cuts
+#z0 = 0.4 ## mean redshift 
+#zhi=2.0 ## the redshift cuts
+#ngal_mean = 20 ## number density in unit of arcmin^-2
+#aMlimOBS = 24.5
+z0 = float(sys.argv[1])
+zhi = float(sys.argv[2])
+ngal_mean = float(sys.argv[3])
+aMlimOBS  = float(sys.argv[4])
+
+folder_name = 'zmean%.1f_zhi%.1f_ngal%i_Mlim%.1f'%(z0, zhi, ngal_mean, aMlimOBS)
+
+zlo=0
 
 ### magnitude cut ###
 ## 0:U1band, 1:U2band, 2:U3band, 3:Bband, 4:Gband, 5:Rband, 6:Iband, 7:Zband
 ibandOBS = 6
-aMlimOBS = 24.5
 
 ### magnification bias parameters ####
 #q=5.0*ss-2.0+beta
 rblend = 1e-6 #unit: aremin, set it to very small to ignore random blending due to non-members
-q=1.5
+#q=1.5
 
 ### galaxy shape noise ########
 sigma_kappa = 0.35 ## HSC = 0.365
 Rgal2halo = 0.02 ## See Kravtsov2013 for galaxy-halo size relation
-
-
 
 ###############################
 ###### constants ##############
@@ -72,11 +78,11 @@ DA = lambda z: DC(z)/(1.0+z) # angular diameter distance
 DL = lambda z: DC(z)*(1.0+z) # luminosity distance
 
 ####### Bryan & Norman 1998 fitting formula to get Rvir = [M/ (4pi/3 rho Delta_vir)]^0.33 
-#dd = lambda z: OmegaM*(1+z)**3/(OmegaM*(1+z)**3+OmegaV)
-#Delta_vir = lambda z: 18.0*pi**2+82.0*dd(z)-39.0*dd(z)**2
-#Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(Delta_vir(z)*rho_cz(z)))**0.3333
+dd = lambda z: OmegaM*(1+z)**3/(OmegaM*(1+z)**3+OmegaV)
+Delta_vir = lambda z: 18.0*pi**2+82.0*dd(z)-39.0*dd(z)**2
+Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(Delta_vir(z)*rho_cz(z)))**0.3333
 ####### Mvir is defined as the M200c, 200 times the critical density
-Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(200.0*rho_cz(z)))**0.3333 ## unit: cm
+#Rvir_fcn = lambda Mvir, z: (0.75/pi * Mvir*M_sun/(200.0*rho_cz(z)))**0.3333 ## unit: cm
 
 ####### generate source galaxies: N, Pz
 Pz = lambda z: 0.5*z**2/z0**3*exp(-z/z0) ## P(z)
@@ -431,7 +437,7 @@ params_arr = array([[iM, iz] for iM in Marr for iz in zarr])
 def sampling_MPI (params):
     print params
     log10M, zlens = params
-    fn='sampling/sampling_MPI_M%.1f_z%.1f.npy'%(log10M, zlens) 
+    fn='sampling/%s/sampling_MPI_M%.1f_z%.1f.npy'%(folder_name,log10M, zlens) 
     out = [sampling (log10M, zlens, iseed=i) for i in xrange(100)]  
     save(fn,out)
    # if not os.path.isfile(fn):
@@ -450,6 +456,7 @@ def sampling_MPI (params):
 ############ MPI ##################
 MPIsampling = 1
 if MPIsampling:
+    os.system('mkdir -p sampling/'+folder_name)
     from emcee.utils import MPIPool 
     pool=MPIPool()
     if not pool.is_master():
