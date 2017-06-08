@@ -323,7 +323,7 @@ def sampling (log10M, zlens, q_arr=[-3,-2,-1,1,2,3], side=10.0, iseed=10027, the
     contributions, ikappa_real, kappa_real =  kappa_proj (log10M,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=side/2, y_lens=side/2)## the actual kappa
     
     
-    out_arr = zeros( (len(q_arr), len(thetaG_arr), 9) )
+    out_arr = zeros( (len(q_arr), len(thetaG_arr), 8) )
     qcounter = 0
     for q in q_arr:
         N_source_new = N_source_back * q * kappa_real
