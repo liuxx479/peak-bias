@@ -18,14 +18,14 @@ from scipy.spatial import cKDTree
 #zhi=2.0 ## the redshift cuts
 #ngal_mean = 20 ## number density in unit of arcmin^-2
 #aMlimOBS = 24.5
-z0 = float(sys.argv[1])
-zhi = float(sys.argv[2])
-ngal_mean = float(sys.argv[3])
-aMlimOBS  = float(sys.argv[4])
+
+zhi = float(sys.argv[1])
+ngal_mean = float(sys.argv[2])
+aMlimOBS  = float(sys.argv[3])
+zlo=0
+z0=0.0417*aMlimOBS ### LSST_SB page73 eq.3.8
 
 folder_name = 'zmean%.1f_zhi%.1f_ngal%i_Mlim%.1f'%(z0, zhi, ngal_mean, aMlimOBS)
-
-zlo=0
 
 ### magnitude cut ###
 ## 0:U1band, 1:U2band, 2:U3band, 3:Bband, 4:Gband, 5:Rband, 6:Iband, 7:Zband
