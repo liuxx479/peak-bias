@@ -22,10 +22,12 @@ from scipy.spatial import cKDTree
 zhi = float(sys.argv[1])
 ngal_mean = float(sys.argv[2])
 aMlimOBS  = float(sys.argv[3])
+sigma_kappa = float(sys.argv[4])#0.35 ## HSC = 0.365
+
 zlo=0.3
 z0=0.0417*aMlimOBS ### LSST_SB page73 eq.3.8
 
-folder_name = 'zmean%.1f_zhi%.1f_ngal%i_Mlim%.1f'%(z0, zhi, ngal_mean, aMlimOBS)
+folder_name = 'zmean%.1f_zhi%.1f_ngal%i_Mlim%.1f_sigmakappa%.2f'%(z0, zhi, ngal_mean, aMlimOBS,sigma_kappa)
 
 ### magnitude cut ###
 ## 0:U1band, 1:U2band, 2:U3band, 3:Bband, 4:Gband, 5:Rband, 6:Iband, 7:Zband
@@ -37,7 +39,7 @@ rblend = 1e-6 #unit: aremin, set it to very small to ignore random blending due 
 #q=1.5
 
 ### galaxy shape noise ########
-sigma_kappa = 0.35 ## HSC = 0.365
+
 Rgal2halo = 0.02 ## See Kravtsov2013 for galaxy-halo size relation
 
 ###############################
