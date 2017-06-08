@@ -338,8 +338,11 @@ def sampling (log10M, zlens, q_arr=[-3,-2,-1,1,2,3], side=10.0, iseed=10027, the
             
         if q<0:
             N_source_remove = int(abs(N_source_new)+0.5)
-            idx_delete = choice(idx_back, N_source_remove,replace=False)
-            idx_remain = delete(arange(len(x_source_arr)), idx_delete)
+            if N_source_remove>0 and len(idx_back)>0:
+                idx_delete = choice(idx_back, N_source_remove,replace=False)
+                idx_remain = delete(arange(len(x_source_arr)), idx_delete)
+            else:
+                idx_remain = arange(len(x_source_arr))
             x_source_new, y_source_new, z_source_new = [],[],[]
         xy = concatenate([[x_source_arr, y_source_arr],
                           [xlens, ylens], [x_source_new, y_source_new]],axis=1).T
