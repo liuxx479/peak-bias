@@ -436,7 +436,7 @@ def sampling (log10M, zlens, q_arr=[-3,-2,-1,1,2,3], side=10.0, iseed=10027, the
 Nsample = 100
 
 Marr = arange(13, 15.5, 0.1)
-zarr = arange(0.1, zhi, 0.1)
+zarr = arange(zlo+0.1, zhi, 0.1)
 
 params_arr = array([[iM, iz] for iM in Marr for iz in zarr])
 
