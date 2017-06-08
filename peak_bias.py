@@ -19,15 +19,26 @@ from scipy.spatial import cKDTree
 #ngal_mean = 20 ## number density in unit of arcmin^-2
 #aMlimOBS = 24.5
 
-zhi = float(sys.argv[1])
-ngal_mean = float(sys.argv[2])
-aMlimOBS  = float(sys.argv[3])
-sigma_kappa = float(sys.argv[4])#0.35 ## HSC = 0.365
+if len(sys.argv)==5:        
+    zhi = float(sys.argv[1])
+    ngal_mean = float(sys.argv[2])
+    aMlimOBS  = float(sys.argv[3])
+    sigma_kappa = float(sys.argv[4])#0.35 ## HSC = 0.365
+    folder_name = 'zmean%.1f_zhi%.1f_ngal%i_Mlim%.1f_sigmakappa%.2f'%(z0, zhi, ngal_mean, aMlimOBS,sigma_kappa)
+else:
+    survey = str(sys.argv[1])
+    if survey=='HSC':
+        zhi, ngal_mean, aMlimOBS, sigma_kappa = 2.0, 20, 24.5, 0.35        
+    elif survey=='LSST':
+        zhi, ngal_mean, aMlimOBS, sigma_kappa = 3.0, 50, 26.5, 0.35        
+    elif survey=='WFIRST':
+        zhi, ngal_mean, aMlimOBS, sigma_kappa = 3.0, 60, 28, 0.2
+    elif survey=='DES':
+        zhi, ngal_mean, aMlimOBS, sigma_kappa = 1.4, 10, 24.0, 0.4
+    folder_name = survey
 
 zlo=0.3
-z0=0.0417*aMlimOBS ### LSST_SB page73 eq.3.8
-
-folder_name = 'zmean%.1f_zhi%.1f_ngal%i_Mlim%.1f_sigmakappa%.2f'%(z0, zhi, ngal_mean, aMlimOBS,sigma_kappa)
+z0=0.0417*aMlimOBS-0.744 ### LSST_SB page73 eq.3.8
 
 ### magnitude cut ###
 ## 0:U1band, 1:U2band, 2:U3band, 3:Bband, 4:Gband, 5:Rband, 6:Iband, 7:Zband
@@ -443,7 +454,7 @@ params_arr = array([[iM, iz] for iM in Marr for iz in zarr])
 def sampling_MPI (params):
     print params
     log10M, zlens = params
-    fn='sampling/%s/sampling_MPI_M%.1f_z%.1f.npy'%(folder_name,log10M, zlens) 
+    fn='sampling/%s/M%.1f_z%.1f.npy'%(folder_name,log10M, zlens) 
 
     if not os.path.isfile(fn):
         out = [sampling (log10M, zlens, iseed=i) for i in xrange(100)]  
@@ -451,14 +462,6 @@ def sampling_MPI (params):
     #else:
         #out=load(fn)
     #return out
-
-#test=array(sampling_MPI((14.5, 0.3)))
-#import threading
-#threads = []
-#for iparams in params_arr[:10]:
-    #t= threading.Thread(target=sampling_MPI, args=(iparams,))
-    #threads.append(t)
-    #t.start()
 
 ############ MPI ##################
 MPIsampling = 1
@@ -472,9 +475,3 @@ if MPIsampling:
 
     pool.map(sampling_MPI, params_arr)
     pool.close()
-############## serial ############               
-#for q in arange(0.5, 4, 0.5):
-    #for thetaG in arange(1.0,4.0):
-        #print 'q thetaG =',q,thetaG
-        #out = array([[[sampling (log10M, zlens, iseed=x, q=q, thetaG=thetaG) for x in range(Nsample)] for zlens in zarr] for log10M in Marr])
-        #save('sampling/kappa_q%.1f_thetaG%.1f.npy'%(q,thetaG), out)
