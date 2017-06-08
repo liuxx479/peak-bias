@@ -22,7 +22,7 @@ from scipy.spatial import cKDTree
 zhi = float(sys.argv[1])
 ngal_mean = float(sys.argv[2])
 aMlimOBS  = float(sys.argv[3])
-zlo=0
+zlo=0.3
 z0=0.0417*aMlimOBS ### LSST_SB page73 eq.3.8
 
 folder_name = 'zmean%.1f_zhi%.1f_ngal%i_Mlim%.1f'%(z0, zhi, ngal_mean, aMlimOBS)
@@ -142,7 +142,7 @@ def kappa_proj (logM,  zlens, z_source_arr, x_source_arr, y_source_arr, x_lens=0
     ## theta_vir=Rvir/Dl_cm
     Gx_arr = array([Gx_fcn(ix, cNFW) for ix in x])
     kappa_p = two_rhos_rs/SIGMAc*Gx_arr  
-    kappa_p[z_source_arr<zlens]=0
+    kappa_p[z_source_arr<=zlens]=0
     source_contribution = exp(-0.5*theta**2/radians(thetaG/60.0)**2)
     source_contribution[z_source_arr<zlens]=0
     kappa = sum(kappa_p * source_contribution)/sum(source_contribution)
@@ -295,11 +295,12 @@ def sampling (log10M, zlens, q_arr=[-3,-2,-1,1,2,3], side=10.0, iseed=10027, the
     cNFW = Cvir(log10M, zlens)
     ngal_like_fcn = lambda cNFW: array([Gx_fcn(ix, cNFW) for ix in linspace(0.01, cNFW, 1001)])
     ingal_like=ngal_like_fcn(cNFW)
+    ingal_like[~isfinite(ingal_like)]=0.0
     ingal_like[ingal_like<0]=0.0
     ngal_like = ingal_like/sum(ingal_like)  
     Rvir = Rvir_fcn(Mvir, zlens)
     theta_vir = degrees(Rvir/Mpc/DC(zlens))*60.0
-    rlenses = theta_vir * np.random.choice(linspace(0.01, 1.0, 1001), size=Nlens, p=ngal_like)# sieze of radius in arcmin
+    rlenses = theta_vir * np.random.choice(linspace(0.01, 1.0, 1001), size=Nlens, p=ngal_like)# size of radius in arcmin
     ang_lenses = rand(Nlens)*2*pi
     xlens = rlenses * sin(ang_lenses) + side/2## in arcmin
     ylens = rlenses * cos(ang_lenses) + side/2## in arcmin
@@ -433,7 +434,7 @@ def sampling (log10M, zlens, q_arr=[-3,-2,-1,1,2,3], side=10.0, iseed=10027, the
 Nsample = 100
 
 Marr = arange(13, 15.5, 0.1)
-zarr = arange(0.1, 2.1, 0.1)
+zarr = arange(0.1, zhi, 0.1)
 
 params_arr = array([[iM, iz] for iM in Marr for iz in zarr])
 
@@ -441,12 +442,13 @@ def sampling_MPI (params):
     print params
     log10M, zlens = params
     fn='sampling/%s/sampling_MPI_M%.1f_z%.1f.npy'%(folder_name,log10M, zlens) 
-    out = [sampling (log10M, zlens, iseed=i) for i in xrange(100)]  
-    save(fn,out)
-   # if not os.path.isfile(fn):
+
+    if not os.path.isfile(fn):
+        out = [sampling (log10M, zlens, iseed=i) for i in xrange(100)]  
+        save(fn,out)
     #else:
         #out=load(fn)
-    return out
+    #return out
 
 #test=array(sampling_MPI((14.5, 0.3)))
 #import threading
