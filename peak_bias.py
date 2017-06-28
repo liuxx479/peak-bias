@@ -37,7 +37,7 @@ else:
         zhi, ngal_mean, aMlimOBS, sigma_kappa = 1.4, 10, 24.0, 0.4
     folder_name = survey
 
-zlo=0.3
+zlo=0.3## lowest redshift bin
 z0=0.0417*aMlimOBS-0.744 ### LSST_SB page73 eq.3.8
 
 ### magnitude cut ###
@@ -447,7 +447,7 @@ def sampling (log10M, zlens, q_arr=[-3,-2,-1,1,2,3], side=10.0, iseed=10027, the
 Nsample = 100
 
 Marr = arange(13, 15.5, 0.1)
-zarr = arange(zlo+0.1, zhi, 0.1)
+zarr = arange(0, zhi, 0.1)
 
 params_arr = array([[iM, iz] for iM in Marr for iz in zarr])
 
